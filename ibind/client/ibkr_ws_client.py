@@ -315,6 +315,7 @@ class IbkrWsClient(WsClient):
         self._last_heartbeat = 0
         self._server_id_conid_pairs: Dict[IbkrWsKey, Dict[str, int]] = defaultdict(dict)
         self._queue_accessors: Dict[IbkrWsKey, QueueAccessor] = {}
+        self._tic_message = {}
 
         if start:
             self.start()
@@ -481,6 +482,8 @@ class IbkrWsClient(WsClient):
         if 'error' in message:
             self._handle_error(message)
 
+        elif topic == 'tic': self._tic_message = message
+
         elif topic is None:
             # in general most message should carry a topic, other than for few exceptions
             self._handle_message_without_topic(message)
@@ -515,6 +518,16 @@ class IbkrWsClient(WsClient):
             _LOGGER.warning(f'{self}: Handled a channel "{channel}" message that is missing a subscription. Message: {message}')
         else:
             _LOGGER.error(f'{self}: Topic "{topic}" unrecognised. Message: {message}')
+
+    def tic(self):
+        ts = self._tic_message.get('lastAccessed', 0)
+        ret = self.send('tic')
+        if not ret: return None
+        def ts_changed():
+            return self._tic_message.get('lastAccessed', 0) != ts
+        if not wait_until(ts_changed, f'tic timeout, ts={ts}', timeout=5):
+            return None
+        return self._tic_message
 
     def check_health(self) -> bool:
         """
